@@ -22,22 +22,13 @@ def send_alert(message: str):
 
 # ================== STOCK LIST ==================
 STOCKS = [
-    "HDFCSILVER.NS",     # HDFC Silver ETF
-    "ICICIGOLD.NS",      # ICICI Gold ETF
-    "IDEA.NS",           # Vodafone Idea
-    "ADANIENT.NS",       # Adani Enterprises
-    "ICICIBANK.NS",      # Strong liquid stock
-    "RELIANCE.NS"        # Strong liquid stock
+    "HDFCSILVER.NS",
+    "ICICIGOLD.NS",
+    "IDEA.NS",
+    "ADANIENT.NS",
+    "ICICIBANK.NS",
+    "RELIANCE.NS"
 ]
-
-# ================== HELPERS ==================
-def to_series(x):
-    """Ensure 1D pandas Series (fixes yfinance + GitHub Actions issues)."""
-    if isinstance(x, pd.DataFrame):
-        return x.iloc[:, 0]
-    if hasattr(x, "values") and len(x.shape) > 1:
-        return x.squeeze()
-    return x
 
 # ================== START MESSAGE ==================
 IST = timezone(timedelta(hours=5, minutes=30))
@@ -53,41 +44,44 @@ for symbol in STOCKS:
             symbol,
             period="6mo",
             interval="1d",
+            auto_adjust=True,
             progress=False
         )
 
         if df.empty or len(df) < 60:
             continue
 
-        close = to_series(df["Close"])
-        volume = to_series(df["Volume"])
+        close = df["Close"].values.flatten()
+        volume = df["Volume"].values.flatten()
 
         # -------- INDICATORS --------
-        df["rsi"] = ta.momentum.RSIIndicator(close, 14).rsi()
-        df["ma20"] = close.rolling(20).mean()
-        df["ma50"] = close.rolling(50).mean()
+        df["rsi"] = ta.momentum.RSIIndicator(pd.Series(close), 14).rsi()
+        df["ma20"] = pd.Series(close).rolling(20).mean()
+        df["ma50"] = pd.Series(close).rolling(50).mean()
 
-        macd = ta.trend.MACD(close)
+        macd = ta.trend.MACD(pd.Series(close))
         df["macd"] = macd.macd()
         df["macd_signal"] = macd.macd_signal()
 
-        df["vol_avg"] = volume.rolling(20).mean()
+        df["vol_avg"] = pd.Series(volume).rolling(20).mean()
 
-        last = df.iloc[-1]
-        prev = df.iloc[-2]
+        i = len(df) - 1
+        p = i - 1
 
-        # -------- FORCE SCALARS (CRITICAL FIX) --------
-        last_close = float(last["Close"])
-        last_rsi = float(last["rsi"])
-        last_ma20 = float(last["ma20"])
-        last_ma50 = float(last["ma50"])
-        last_macd = float(last["macd"])
-        last_macd_signal = float(last["macd_signal"])
-        last_volume = float(last["Volume"])
-        last_vol_avg = float(last["vol_avg"])
+        # -------- SCALAR VALUES (BULLETPROOF) --------
+        last_close = close[i]
+        last_volume = volume[i]
+        last_vol_avg = df["vol_avg"].iat[i]
 
-        prev_macd = float(prev["macd"])
-        prev_macd_signal = float(prev["macd_signal"])
+        last_rsi = df["rsi"].iat[i]
+        last_ma20 = df["ma20"].iat[i]
+        last_ma50 = df["ma50"].iat[i]
+
+        last_macd = df["macd"].iat[i]
+        last_macd_signal = df["macd_signal"].iat[i]
+
+        prev_macd = df["macd"].iat[p]
+        prev_macd_signal = df["macd_signal"].iat[p]
 
         buy_score = 0
         sell_score = 0
