@@ -77,6 +77,8 @@ for symbol in STOCKS:
         reasons.append("MACD bearish")
 
     # ---------- FINAL DECISION ----------
+
+    alerts.append(start)
     if buy_score >= 2 and buy_score > sell_score:
         alerts.append(
             f"📈 BUY {symbol}\n"
