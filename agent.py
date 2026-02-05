@@ -3,10 +3,14 @@ import ta
 import requests
 import os
 import pandas as pd
+from datetime import datetime, timezone, timedelta
 
 # ================== TELEGRAM CONFIG ==================
 BOT_TOKEN = os.getenv("BOT_TOKEN")
 CHAT_ID = os.getenv("CHAT_ID")
+
+if not BOT_TOKEN or not CHAT_ID:
+    raise ValueError("BOT_TOKEN or CHAT_ID not set in GitHub Secrets")
 
 def send_alert(message: str):
     url = f"https://api.telegram.org/bot{BOT_TOKEN}/sendMessage"
@@ -28,19 +32,23 @@ STOCKS = [
 
 # ================== HELPERS ==================
 def to_series(x):
-    """
-    Ensures data is 1-D pandas Series.
-    Fixes GitHub Actions + yfinance shape issues.
-    """
+    """Ensure 1D pandas Series (fixes GitHub Actions + yfinance issue)."""
     if isinstance(x, pd.DataFrame):
         return x.iloc[:, 0]
     if hasattr(x, "values") and len(x.shape) > 1:
         return x.squeeze()
     return x
 
-# ================== MAIN LOGIC ==================
-alerts = []
+# ================== START MESSAGE ==================
+IST = timezone(timedelta(hours=5, minutes=30))
+start_message = (
+    "⏰ Hourly Stock Scan Started\n"
+    f"Time: {datetime.now(IST).strftime('%Y-%m-%d %H:%M IST')}\n"
+)
 
+alerts = [start_message]
+
+# ================== MAIN LOGIC ==================
 for symbol in STOCKS:
     try:
         df = yf.download(
@@ -53,11 +61,10 @@ for symbol in STOCKS:
         if df.empty or len(df) < 60:
             continue
 
-        # ---- Force 1D series (CRITICAL FIX) ----
         close = to_series(df["Close"])
         volume = to_series(df["Volume"])
 
-        # ---- INDICATORS ----
+        # -------- INDICATORS --------
         df["rsi"] = ta.momentum.RSIIndicator(close, 14).rsi()
         df["ma20"] = close.rolling(20).mean()
         df["ma50"] = close.rolling(50).mean()
@@ -75,7 +82,7 @@ for symbol in STOCKS:
         sell_score = 0
         reasons = []
 
-        # ================== METHOD 1: RSI ==================
+        # -------- RSI --------
         if last["rsi"] < 35:
             buy_score += 1
             reasons.append("RSI oversold")
@@ -84,7 +91,7 @@ for symbol in STOCKS:
             sell_score += 1
             reasons.append("RSI overbought")
 
-        # ================== METHOD 2: TREND ==================
+        # -------- TREND --------
         if last["ma20"] > last["ma50"]:
             buy_score += 1
             reasons.append("Uptrend (MA20 > MA50)")
@@ -92,7 +99,7 @@ for symbol in STOCKS:
             sell_score += 1
             reasons.append("Downtrend (MA20 < MA50)")
 
-        # ================== METHOD 3: MACD + VOLUME ==================
+        # -------- MACD + VOLUME --------
         if (
             last["macd"] > last["macd_signal"]
             and prev["macd"] <= prev["macd_signal"]
@@ -105,8 +112,7 @@ for symbol in STOCKS:
             sell_score += 1
             reasons.append("MACD bearish")
 
-        # ================== FINAL DECISION ==================
-        alerts.append(start)
+        # -------- FINAL DECISION --------
         if buy_score >= 2 and buy_score > sell_score:
             alerts.append(
                 f"📈 BUY {symbol}\n"
@@ -124,9 +130,10 @@ for symbol in STOCKS:
             )
 
     except Exception as e:
-        # Never fail whole job for one stock
-        send_alert(f"⚠️ Error processing {symbol}: {e}")
+        alerts.append(f"⚠️ Error processing {symbol}: {e}")
 
-# ================== SEND TELEGRAM ALERT ==================
-if alerts:
-    send_alert("📊 STOCK ANALYSIS ALERT (Hourly)\n\n" + "\n\n".join(alerts))
+# ================== SEND MESSAGE (ALWAYS) ==================
+if len(alerts) == 1:
+    alerts.append("No BUY / SELL signals this hour.")
+
+send_alert("📊 STOCK ANALYSIS ALERT (Hourly)\n\n" + "\n\n".join(alerts))
