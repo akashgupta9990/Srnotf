@@ -32,7 +32,7 @@ STOCKS = [
 
 # ================== HELPERS ==================
 def to_series(x):
-    """Ensure 1D pandas Series (fixes GitHub Actions + yfinance issue)."""
+    """Ensure 1D pandas Series (fixes yfinance + GitHub Actions issues)."""
     if isinstance(x, pd.DataFrame):
         return x.iloc[:, 0]
     if hasattr(x, "values") and len(x.shape) > 1:
@@ -41,12 +41,10 @@ def to_series(x):
 
 # ================== START MESSAGE ==================
 IST = timezone(timedelta(hours=5, minutes=30))
-start_message = (
+alerts = [
     "⏰ Hourly Stock Scan Started\n"
     f"Time: {datetime.now(IST).strftime('%Y-%m-%d %H:%M IST')}\n"
-)
-
-alerts = [start_message]
+]
 
 # ================== MAIN LOGIC ==================
 for symbol in STOCKS:
@@ -78,21 +76,34 @@ for symbol in STOCKS:
         last = df.iloc[-1]
         prev = df.iloc[-2]
 
+        # -------- FORCE SCALARS (CRITICAL FIX) --------
+        last_close = float(last["Close"])
+        last_rsi = float(last["rsi"])
+        last_ma20 = float(last["ma20"])
+        last_ma50 = float(last["ma50"])
+        last_macd = float(last["macd"])
+        last_macd_signal = float(last["macd_signal"])
+        last_volume = float(last["Volume"])
+        last_vol_avg = float(last["vol_avg"])
+
+        prev_macd = float(prev["macd"])
+        prev_macd_signal = float(prev["macd_signal"])
+
         buy_score = 0
         sell_score = 0
         reasons = []
 
         # -------- RSI --------
-        if last["rsi"] < 35:
+        if last_rsi < 35:
             buy_score += 1
             reasons.append("RSI oversold")
 
-        if last["rsi"] > 70:
+        if last_rsi > 70:
             sell_score += 1
             reasons.append("RSI overbought")
 
         # -------- TREND --------
-        if last["ma20"] > last["ma50"]:
+        if last_ma20 > last_ma50:
             buy_score += 1
             reasons.append("Uptrend (MA20 > MA50)")
         else:
@@ -101,14 +112,14 @@ for symbol in STOCKS:
 
         # -------- MACD + VOLUME --------
         if (
-            last["macd"] > last["macd_signal"]
-            and prev["macd"] <= prev["macd_signal"]
-            and last["Volume"] > 1.2 * last["vol_avg"]
+            last_macd > last_macd_signal
+            and prev_macd <= prev_macd_signal
+            and last_volume > 1.2 * last_vol_avg
         ):
             buy_score += 1
             reasons.append("MACD bullish + Volume surge")
 
-        if last["macd"] < last["macd_signal"]:
+        if last_macd < last_macd_signal:
             sell_score += 1
             reasons.append("MACD bearish")
 
@@ -116,7 +127,7 @@ for symbol in STOCKS:
         if buy_score >= 2 and buy_score > sell_score:
             alerts.append(
                 f"📈 BUY {symbol}\n"
-                f"Price: ₹{last['Close']:.2f}\n"
+                f"Price: ₹{last_close:.2f}\n"
                 f"Score: {buy_score}/3\n"
                 f"Reasons: {', '.join(reasons)}"
             )
@@ -124,7 +135,7 @@ for symbol in STOCKS:
         elif sell_score >= 2:
             alerts.append(
                 f"📉 SELL {symbol}\n"
-                f"Price: ₹{last['Close']:.2f}\n"
+                f"Price: ₹{last_close:.2f}\n"
                 f"Score: {sell_score}/3\n"
                 f"Reasons: {', '.join(reasons)}"
             )
