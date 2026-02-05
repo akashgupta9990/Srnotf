@@ -2,7 +2,7 @@ name: Hourly Stock Alert Agent
 
 on:
   schedule:
-    - cron: "0 * * * *"   # every hour
+  - cron: "44 2-10 * * 1-5"
   workflow_dispatch:
 
 jobs:
